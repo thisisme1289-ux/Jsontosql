@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CUETAce — JSON → D1 SQL</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Sora:wght@300;400;600;700&display=swap');
+
+  :root {
+    --bg:       #0d0f14;
+    --bg2:      #13161e;
+    --bg3:      #1a1e2a;
+    --border:   #252a38;
+    --gold:     #c9a84c;
+    --gold2:    #e8c97a;
+    --cream:    #f0e8d0;
+    --muted:    #6b7280;
+    --green:    #34d399;
+    --red:      #f87171;
+    --blue:     #60a5fa;
+    --purple:   #a78bfa;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--cream);
+    font-family: 'Sora', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── background grid ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(201,168,76,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(201,168,76,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap {
+    position: relative;
+    z-index: 1;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 40px 20px 80px;
+  }
+
+  /* ── header ── */
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 40px;
+  }
+  .logo {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--gold);
+    letter-spacing: -0.5px;
+  }
+  .logo span { color: var(--cream); }
+  .badge {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gold);
+    border: 1px solid rgba(201,168,76,0.3);
+    border-radius: 4px;
+    padding: 3px 8px;
+  }
+  .header-desc {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  /* ── section titles ── */
+  .section-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 10px;
+  }
+
+  /* ── api key row ── */
+  .api-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+  .api-row input {
+    flex: 1;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 11px 14px;
+    color: var(--cream);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .api-row input:focus { border-color: rgba(201,168,76,0.5); }
+  .api-row input::placeholder { color: var(--muted); }
+
+  /* ── drop zone ── */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 48px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--bg2);
+    margin-bottom: 20px;
+    position: relative;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--gold);
+    background: rgba(201,168,76,0.04);
+  }
+  .drop-zone input[type=file] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+  .drop-icon { font-size: 36px; margin-bottom: 12px; }
+  .drop-title { font-size: 16px; font-weight: 600; color: var(--cream); margin-bottom: 6px; }
+  .drop-sub { font-size: 13px; color: var(--muted); }
+
+  /* ── file list ── */
+  .file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 24px;
+  }
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+  .file-item .fname {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--blue);
+    flex: 1;
+  }
+  .file-item .fsize { color: var(--muted); font-size: 12px; }
+  .file-item .fstatus {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  .fstatus.pending  { background: rgba(107,114,128,0.2); color: var(--muted); }
+  .fstatus.loading  { background: rgba(96,165,250,0.15); color: var(--blue); }
+  .fstatus.done     { background: rgba(52,211,153,0.15); color: var(--green); }
+  .fstatus.error    { background: rgba(248,113,113,0.15); color: var(--red); }
+  .fstatus.skipped  { background: rgba(167,139,250,0.15); color: var(--purple); }
+
+  /* ── buttons ── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 22px;
+    border-radius: 8px;
+    font-family: 'Sora', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+  }
+  .btn-gold {
+    background: var(--gold);
+    color: #0d0f14;
+  }
+  .btn-gold:hover:not(:disabled) { background: var(--gold2); transform: translateY(-1px); }
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--cream);
+  }
+  .btn-ghost:hover:not(:disabled) { border-color: var(--gold); color: var(--gold); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 28px; }
+
+  /* ── progress ── */
+  .progress-wrap {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 24px;
+    display: none;
+  }
+  .progress-wrap.visible { display: block; }
+  .progress-bar-bg {
+    background: var(--bg3);
+    border-radius: 999px;
+    height: 6px;
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--gold), var(--gold2));
+    border-radius: 999px;
+    transition: width 0.4s ease;
+    width: 0%;
+  }
+  .progress-text {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ── stats row ── */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+  .stat-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    text-align: center;
+  }
+  .stat-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--gold);
+    margin-bottom: 4px;
+  }
+  .stat-label { font-size: 11px; color: var(--muted); }
+
+  /* ── output ── */
+  .output-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .output-box {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    display: none;
+  }
+  .output-box.visible { display: block; }
+
+  .chunk-list { display: flex; flex-direction: column; }
+  .chunk-item {
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .chunk-item:last-child { border-bottom: none; }
+  .chunk-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+  }
+  .chunk-header:hover { background: var(--bg3); }
+  .chunk-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--gold);
+    background: rgba(201,168,76,0.1);
+    border-radius: 4px;
+    padding: 2px 8px;
+  }
+  .chunk-desc { font-size: 13px; color: var(--cream); flex: 1; }
+  .chunk-count { font-size: 12px; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+  .chunk-copy {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 5px;
+    background: rgba(201,168,76,0.15);
+    color: var(--gold);
+    border: none;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .chunk-copy:hover { background: rgba(201,168,76,0.3); }
+  .chunk-copy.copied { background: rgba(52,211,153,0.15); color: var(--green); }
+  .chunk-chevron { color: var(--muted); font-size: 12px; transition: transform 0.2s; }
+  .chunk-item.open .chunk-chevron { transform: rotate(90deg); }
+
+  .chunk-body {
+    display: none;
+    background: #0a0c10;
+    padding: 14px 16px;
+    overflow-x: auto;
+  }
+  .chunk-item.open .chunk-body { display: block; }
+  .chunk-body pre {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #8fa3c0;
+    white-space: pre-wrap;
+    word-break: break-all;
+    line-height: 1.7;
+    margin: 0;
+  }
+
+  /* ── instructions ── */
+  .instructions {
+    background: rgba(96,165,250,0.06);
+    border: 1px solid rgba(96,165,250,0.2);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 24px;
+    display: none;
+  }
+  .instructions.visible { display: block; }
+  .inst-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--blue);
+    margin-bottom: 10px;
+  }
+  .inst-step {
+    display: flex;
+    gap: 10px;
+    font-size: 12px;
+    color: #9ca3af;
+    line-height: 1.7;
+    margin-bottom: 4px;
+  }
+  .inst-step .n {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--blue);
+    font-weight: 700;
+    min-width: 18px;
+  }
+
+  /* ── download all ── */
+  .download-bar {
+    background: rgba(52,211,153,0.06);
+    border: 1px solid rgba(52,211,153,0.2);
+    border-radius: 10px;
+    padding: 16px 20px;
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .download-bar.visible { display: flex; }
+  .download-bar-text { font-size: 13px; color: var(--green); }
+  .download-bar-text span { font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+
+  @media (max-width: 600px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .header-desc { display: none; }
+    .api-row { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">CUET<span>Ace</span></div>
+    <div class="badge">JSON → D1 SQL</div>
+    <div class="header-desc">Powered by SambaNova AI</div>
+  </div>
+
+  <!-- API Key -->
+  <div class="section-label">SambaNova API Key</div>
+  <div class="api-row">
+    <input type="password" id="apiKey" placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxx" autocomplete="off">
+  </div>
+
+  <!-- Drop Zone -->
+  <div class="section-label">Upload JSON Files</div>
+  <div class="drop-zone" id="dropZone">
+    <input type="file" id="fileInput" multiple accept=".json">
+    <div class="drop-icon">📂</div>
+    <div class="drop-title">Drop your JSON files here</div>
+    <div class="drop-sub">AC01.json, EC01.json, EN-S1.json… all subjects supported</div>
+  </div>
+
+  <!-- File List -->
+  <div class="file-list" id="fileList"></div>
+
+  <!-- Actions -->
+  <div class="actions">
+    <button class="btn btn-gold" id="btnProcess" disabled>⚡ Generate SQL</button>
+    <button class="btn btn-ghost" id="btnClear" disabled>✕ Clear All</button>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="progressFill"></div>
+    </div>
+    <div class="progress-text" id="progressText">Starting…</div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row" id="statsRow" style="display:none;">
+    <div class="stat-card">
+      <div class="stat-num" id="statFiles">0</div>
+      <div class="stat-label">Files processed</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" id="statQuestions">0</div>
+      <div class="stat-label">Questions found</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" id="statChunks">0</div>
+      <div class="stat-label">SQL chunks</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" id="statErrors">0</div>
+      <div class="stat-label">Skipped</div>
+    </div>
+  </div>
+
+  <!-- Download bar -->
+  <div class="download-bar" id="downloadBar">
+    <div class="download-bar-text">✅ All done — <span id="dlTotal">0</span> questions ready for D1</div>
+    <button class="btn btn-gold" id="btnDownload">⬇ Download seed.sql</button>
+  </div>
+
+  <!-- Instructions -->
+  <div class="instructions" id="instructions">
+    <div class="inst-title">📋 How to import into Cloudflare D1</div>
+    <div class="inst-step"><span class="n">1.</span><span>Go to dash.cloudflare.com → D1 → cuetace-questions → Console tab</span></div>
+    <div class="inst-step"><span class="n">2.</span><span>Click each chunk below → Copy → Paste into D1 console → Execute</span></div>
+    <div class="inst-step"><span class="n">3.</span><span>Wait for "Successfully executed" before pasting the next chunk</span></div>
+    <div class="inst-step"><span class="n">4.</span><span>Repeat for all chunks. Done!</span></div>
+  </div>
+
+  <!-- Output chunks -->
+  <div class="output-header" id="outputHeader" style="display:none;">
+    <div class="section-label" style="margin:0;">SQL Chunks — paste each into D1 Console</div>
+    <button class="btn btn-ghost" id="btnCopyAll" style="font-size:12px;padding:7px 14px;">Copy All</button>
+  </div>
+  <div class="output-box" id="outputBox">
+    <div class="chunk-list" id="chunkList"></div>
+  </div>
+
+</div>
+
+<script>
+// ─────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────
+let files = [];       // { file, name, status, sql, count, error }
+let allSQL = [];      // flat array of INSERT statements
+const CHUNK_SIZE = 25; // statements per D1 console paste (safe limit)
+
+const SUBJECT_MAP = {
+  'accountancy':      'Accountancy',
+  'business-studies': 'Business Studies',
+  'economics':        'Economics',
+  'general-test':     'General Test',
+  'english':          'English',
+};
+
+// Detect subject from chapter_id prefix or filename
+function detectSubject(data, filename) {
+  if (data.subject) return data.subject;
+  const fn = filename.toLowerCase().replace('.json','');
+  if (fn.startsWith('ac'))   return 'Accountancy';
+  if (fn.startsWith('bs'))   return 'Business Studies';
+  if (fn.startsWith('ec'))   return 'Economics';
+  if (fn.startsWith('gt'))   return 'General Test';
+  if (fn.startsWith('en'))   return 'English';
+  // PYP files: "2023-accountancy"
+  for (const [k,v] of Object.entries(SUBJECT_MAP)) {
+    if (fn.includes(k)) return v;
+  }
+  return data.subject || 'Unknown';
+}
+
+function detectPYPYear(filename) {
+  const m = filename.match(/^(\d{4})-/);
+  return m ? m[1] : null;
+}
+
+// ─────────────────────────────────────────────────
+// SQL HELPERS
+// ─────────────────────────────────────────────────
+function esc(s) {
+  if (s === null || s === undefined) return 'NULL';
+  return "'" + String(s).replace(/'/g, "''") + "'";
+}
+function escj(v) {
+  if (v === null || v === undefined) return 'NULL';
+  return esc(JSON.stringify(v));
+}
+
+function questionToSQL(q, subject, chapterId, chapterName, pypYear) {
+  const qid   = q.id || (chapterId + 'Q' + String(Math.random()).slice(2,8));
+  const qtype = q.type || 'MCQ';
+  const level = (q.level || 'L1').toUpperCase();
+  const opts  = Array.isArray(q.options) ? q.options : [];
+  if (opts.length !== 4) return null; // skip malformed
+
+  return `INSERT OR IGNORE INTO questions `
+    + `(id,subject,chapter_id,chapter,type,level,question,options,correct,explanation,passage,sentence,statements,column_i,column_ii,pyp_year) VALUES (`
+    + `${esc(qid)},${esc(subject)},${esc(chapterId)},${esc(chapterName)},`
+    + `${esc(qtype)},${esc(level)},${esc(q.question)},${escj(opts)},`
+    + `${q.correct ?? 0},${esc(q.explanation||'')},${esc(q.passage||'')},`
+    + `${esc(q.sentence||'')},${escj(q.statements||null)},`
+    + `${escj(q.column_i||null)},${escj(q.column_ii||null)},`
+    + `${pypYear ? esc(String(pypYear)) : 'NULL'});`;
+}
+
+// ─────────────────────────────────────────────────
+// AI REPAIR — for malformed / unusual JSON via SambaNova
+// ─────────────────────────────────────────────────
+async function repairWithAI(rawText, filename, apiKey) {
+  const prompt = `You are a JSON repair tool for a CUET exam question bank.
+
+The file "${filename}" contains question data that may be malformed, have unusual structure, or have missing fields.
+
+Your job: extract ALL questions from this data and return a clean JSON array.
+
+Each question object MUST have these exact fields:
+- id: string (e.g. "AC01Q001")
+- type: string (e.g. "MCQ", "assertion_reason", "case_based", "match_list", "sequence")
+- level: "L1" | "L2" | "L3"
+- question: string (the question text)
+- options: array of exactly 4 strings
+- correct: number (0-based index of correct option)
+- explanation: string (can be empty "")
+- passage: string (for reading comprehension, else "")
+- sentence: string (for fill-in-the-blank/vocabulary context, else "")
+- statements: object like {"A":"...","B":"...","C":"...","D":"..."} or null
+- column_i: object like {"A":"...","B":"...","C":"...","D":"..."} or null
+- column_ii: object like {"1":"...","2":"...","3":"...","4":"..."} or null
+
+RULES:
+- If options array has more or fewer than 4 items, fix it or skip the question
+- If correct is missing, set to 0
+- Never invent questions — only extract what exists
+- Return ONLY a raw JSON array, no markdown, no explanation
+
+INPUT DATA:
+${rawText.slice(0, 12000)}`;
+
+  const res = await fetch('https://api.sambanova.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'Meta-Llama-3.3-70B-Instruct',
+      max_tokens: 8000,
+      temperature: 0,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+
+  if (!res.ok) throw new Error(`SambaNova API ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  const text = data.choices?.[0]?.message?.content || '';
+
+  // Strip markdown fences if present
+  const clean = text.replace(/```json\s*/gi,'').replace(/```\s*/gi,'').trim();
+  return JSON.parse(clean);
+}
+
+// ─────────────────────────────────────────────────
+// PROCESS ONE FILE
+// ─────────────────────────────────────────────────
+async function processFile(fileObj, apiKey) {
+  const { file, name } = fileObj;
+  setStatus(name, 'loading', 'Processing…');
+
+  const rawText = await file.text();
+  let data;
+  let questions = [];
+  const pypYear = detectPYPYear(name);
+
+  // Step 1: try normal parse
+  try {
+    data = JSON.parse(rawText);
+  } catch(e) {
+    // Malformed JSON — send to AI
+    setStatus(name, 'loading', 'Repairing with AI…');
+    try {
+      questions = await repairWithAI(rawText, name, apiKey);
+      const subject = detectSubject({}, name);
+      const chId = name.replace('.json','').toUpperCase();
+      const rows = questions.map((q, i) => {
+        q.id = q.id || (chId + 'Q' + String(i+1).padStart(3,'0'));
+        return questionToSQL(q, subject, chId, chId, pypYear);
+      }).filter(Boolean);
+      setStatus(name, 'done', `${rows.length} questions (AI-repaired)`);
+      return { name, rows, count: rows.length, error: null };
+    } catch(aiErr) {
+      setStatus(name, 'error', 'Failed: ' + aiErr.message.slice(0,60));
+      return { name, rows: [], count: 0, error: aiErr.message };
+    }
+  }
+
+  // Step 2: normal JSON — detect structure
+  const subject = detectSubject(data, name);
+
+  // Structure A: { questions: [...] } (flat — like EC01.json)
+  if (Array.isArray(data.questions)) {
+    const chId   = data.chapter_id || name.replace('.json','').toUpperCase();
+    const chName = data.chapter    || chId;
+    const rows = data.questions.map((q, i) => {
+      q.id = q.id || (chId + 'Q' + String(i+1).padStart(3,'0'));
+      return questionToSQL(q, subject, chId, chName, pypYear);
+    }).filter(Boolean);
+    setStatus(name, 'done', `${rows.length} questions`);
+    return { name, rows, count: rows.length, error: null };
+  }
+
+  // Structure B: { chapters: [...] } (nested)
+  if (Array.isArray(data.chapters)) {
+    const rows = [];
+    data.chapters.forEach(ch => {
+      const chId   = ch.chapter_id  || ch.id      || 'UNKNOWN';
+      const chName = ch.chapter     || ch.chapter_name || ch.section || chId;
+      (ch.questions || []).forEach((q, i) => {
+        q.id = q.id || (chId + 'Q' + String(i+1).padStart(3,'0'));
+        const sql = questionToSQL(q, subject, chId, chName, pypYear);
+        if (sql) rows.push(sql);
+      });
+    });
+    setStatus(name, 'done', `${rows.length} questions`);
+    return { name, rows, count: rows.length, error: null };
+  }
+
+  // Structure C: unknown — send to AI to extract
+  setStatus(name, 'loading', 'Unusual structure — asking AI…');
+  try {
+    questions = await repairWithAI(rawText, name, apiKey);
+    const chId = data.chapter_id || name.replace('.json','').toUpperCase();
+    const chName = data.chapter || chId;
+    const rows = questions.map((q, i) => {
+      q.id = q.id || (chId + 'Q' + String(i+1).padStart(3,'0'));
+      return questionToSQL(q, subject, chId, chName, pypYear);
+    }).filter(Boolean);
+    setStatus(name, 'done', `${rows.length} questions (AI-extracted)`);
+    return { name, rows, count: rows.length, error: null };
+  } catch(aiErr) {
+    setStatus(name, 'error', 'Failed: ' + aiErr.message.slice(0,60));
+    return { name, rows: [], count: 0, error: aiErr.message };
+  }
+}
+
+// ─────────────────────────────────────────────────
+// UI HELPERS
+// ─────────────────────────────────────────────────
+function setStatus(name, status, label) {
+  const el = document.querySelector(`[data-file="${name}"] .fstatus`);
+  if (!el) return;
+  el.className = 'fstatus ' + status;
+  el.textContent = label;
+}
+
+function renderFileList() {
+  const fl = document.getElementById('fileList');
+  fl.innerHTML = files.map(f => `
+    <div class="file-item" data-file="${f.name}">
+      <span>📄</span>
+      <span class="fname">${f.name}</span>
+      <span class="fsize">${(f.file.size/1024).toFixed(0)} KB</span>
+      <span class="fstatus pending">Pending</span>
+    </div>
+  `).join('');
+}
+
+function chunkArray(arr, size) {
+  const chunks = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
+function renderChunks(chunks) {
+  const list = document.getElementById('chunkList');
+  list.innerHTML = chunks.map((chunk, i) => `
+    <div class="chunk-item" id="chunk-${i}">
+      <div class="chunk-header" onclick="toggleChunk(${i})">
+        <span class="chunk-num">CHUNK ${i+1}</span>
+        <span class="chunk-desc">Questions ${i*CHUNK_SIZE+1}–${Math.min((i+1)*CHUNK_SIZE, allSQL.length)}</span>
+        <span class="chunk-count">${chunk.length} INSERTs</span>
+        <button class="chunk-copy" onclick="copyChunk(event,${i})">Copy</button>
+        <span class="chunk-chevron">▶</span>
+      </div>
+      <div class="chunk-body">
+        <pre>${escHtml('BEGIN TRANSACTION;\n' + chunk.join('\n') + '\nCOMMIT;')}</pre>
+      </div>
+    </div>
+  `).join('');
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toggleChunk(i) {
+  document.getElementById('chunk-'+i).classList.toggle('open');
+}
+
+function copyChunk(e, i) {
+  e.stopPropagation();
+  const chunk = chunkArray(allSQL, CHUNK_SIZE)[i];
+  const text = 'BEGIN TRANSACTION;\n' + chunk.join('\n') + '\nCOMMIT;';
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = e.target;
+    btn.textContent = '✓ Copied';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+// ─────────────────────────────────────────────────
+// MAIN PROCESS
+// ─────────────────────────────────────────────────
+async function processAll() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  if (!apiKey) { alert('Please enter your SambaNova API key first.'); return; }
+  if (files.length === 0) { alert('Please upload at least one JSON file.'); return; }
+
+  document.getElementById('btnProcess').disabled = true;
+  document.getElementById('btnClear').disabled   = true;
+  document.getElementById('progressWrap').classList.add('visible');
+  document.getElementById('outputBox').classList.remove('visible');
+  document.getElementById('outputHeader').style.display = 'none';
+  document.getElementById('downloadBar').classList.remove('visible');
+  document.getElementById('instructions').classList.remove('visible');
+  document.getElementById('statsRow').style.display = 'none';
+  allSQL = [];
+
+  let processed = 0, totalQ = 0, totalErrors = 0;
+
+  for (const fileObj of files) {
+    const pct = Math.round((processed / files.length) * 100);
+    document.getElementById('progressFill').style.width = pct + '%';
+    document.getElementById('progressText').textContent =
+      `Processing ${fileObj.name}… (${processed+1} of ${files.length})`;
+
+    const result = await processFile(fileObj, apiKey);
+    allSQL.push(...result.rows);
+    totalQ += result.count;
+    if (result.error) totalErrors++;
+    processed++;
+  }
+
+  // Final
+  document.getElementById('progressFill').style.width = '100%';
+  document.getElementById('progressText').textContent =
+    `Done! ${totalQ} questions from ${processed} files.`;
+
+  // Stats
+  const chunks = chunkArray(allSQL, CHUNK_SIZE);
+  document.getElementById('statFiles').textContent     = processed;
+  document.getElementById('statQuestions').textContent = totalQ;
+  document.getElementById('statChunks').textContent    = chunks.length;
+  document.getElementById('statErrors').textContent    = totalErrors;
+  document.getElementById('statsRow').style.display    = 'grid';
+
+  // Output
+  if (allSQL.length > 0) {
+    renderChunks(chunks);
+    document.getElementById('outputBox').classList.add('visible');
+    document.getElementById('outputHeader').style.display = 'flex';
+    document.getElementById('instructions').classList.add('visible');
+    document.getElementById('downloadBar').classList.add('visible');
+    document.getElementById('dlTotal').textContent = totalQ;
+  }
+
+  document.getElementById('btnClear').disabled = false;
+}
+
+// ─────────────────────────────────────────────────
+// DOWNLOAD ALL AS SINGLE .SQL FILE
+// ─────────────────────────────────────────────────
+document.getElementById('btnDownload').addEventListener('click', () => {
+  const text = `-- CUETAce D1 seed data\n-- Generated: ${new Date().toISOString()}\n-- Total: ${allSQL.length} questions\n\nBEGIN TRANSACTION;\n\n`
+    + allSQL.join('\n')
+    + `\n\nCOMMIT;\n`;
+  const blob = new Blob([text], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'seed.sql';
+  a.click();
+});
+
+// ─────────────────────────────────────────────────
+// COPY ALL CHUNKS
+// ─────────────────────────────────────────────────
+document.getElementById('btnCopyAll').addEventListener('click', function() {
+  const text = 'BEGIN TRANSACTION;\n' + allSQL.join('\n') + '\nCOMMIT;';
+  navigator.clipboard.writeText(text).then(() => {
+    this.textContent = '✓ Copied All';
+    setTimeout(() => this.textContent = 'Copy All', 2000);
+  });
+});
+
+// ─────────────────────────────────────────────────
+// FILE INPUT
+// ─────────────────────────────────────────────────
+function addFiles(newFiles) {
+  const existing = new Set(files.map(f => f.name));
+  for (const f of newFiles) {
+    if (!existing.has(f.name)) {
+      files.push({ file: f, name: f.name, status: 'pending' });
+    }
+  }
+  renderFileList();
+  document.getElementById('btnProcess').disabled = files.length === 0;
+  document.getElementById('btnClear').disabled   = files.length === 0;
+}
+
+document.getElementById('fileInput').addEventListener('change', e => {
+  addFiles(e.target.files);
+  e.target.value = '';
+});
+
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault();
+  dz.classList.remove('drag-over');
+  addFiles(e.dataTransfer.files);
+});
+
+// ─────────────────────────────────────────────────
+// CLEAR
+// ─────────────────────────────────────────────────
+document.getElementById('btnClear').addEventListener('click', () => {
+  files = [];
+  allSQL = [];
+  document.getElementById('fileList').innerHTML = '';
+  document.getElementById('chunkList').innerHTML = '';
+  document.getElementById('outputBox').classList.remove('visible');
+  document.getElementById('outputHeader').style.display = 'none';
+  document.getElementById('downloadBar').classList.remove('visible');
+  document.getElementById('instructions').classList.remove('visible');
+  document.getElementById('statsRow').style.display = 'none';
+  document.getElementById('progressWrap').classList.remove('visible');
+  document.getElementById('btnProcess').disabled = true;
+  document.getElementById('btnClear').disabled   = true;
+});
+
+// ─────────────────────────────────────────────────
+// PROCESS BUTTON
+// ─────────────────────────────────────────────────
+document.getElementById('btnProcess').addEventListener('click', processAll);
+</script>
+</body>
+</html>
